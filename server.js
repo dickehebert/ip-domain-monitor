@@ -69,3 +69,22 @@ app.post('/v1/targets', authenticateKey, async (req, res) => {
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('API Server running'));
+
+// Endpoint: Remove a target from monitoring
+app.delete('/v1/targets', authenticateKey, async (req, res) => {
+  const { type, value } = req.body;
+
+  if (!type || !value) {
+    return res.status(400).json({ error: 'Missing type or value in request body.' });
+  }
+
+  const { error } = await supabase
+    .from('monitored_targets')
+    .delete()
+    .eq('api_key_id', req.keyId)
+    .eq('type', type)
+    .eq('value', value);
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ message: 'Target removed successfully.' });
+});
