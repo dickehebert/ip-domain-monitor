@@ -4,7 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors()); // Allows browser fetch requests from your frontend domain
+app.use(cors());
 app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -46,12 +46,26 @@ app.post('/v1/targets', authenticateKey, async (req, res) => {
     return res.status(400).json({ error: 'Invalid payload. Expects { "type": "ip"|"domain", "value": "..." }' });
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('monitored_targets')
     .upsert({ api_key_id: req.keyId, type, value, status: 'pending' }, { onConflict: 'api_key_id,type,value' });
 
   if (error) return res.status(500).json({ error: error.message });
-  return res.status(201).json({ message: `${type.toUpperCase()} registered for monitoring successfully.` });
+
+  // Instantly trigger GitHub Actions workflow scan
+  if (process.env.GITHUB_TOKEN && process.env.GITHUB_REPO) {
+    fetch(`https://api.github.com/repos/${process.env.GITHUB_REPO}/actions/workflows/blacklist-check.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Render-API-Gateway'
+      },
+      body: JSON.stringify({ ref: 'main' })
+    }).catch(err => console.error('Failed to trigger GitHub Action dispatch:', err));
+  }
+
+  return res.status(201).json({ message: `${type.toUpperCase()} registered. Instant scan queued successfully.` });
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('API Server running'));
