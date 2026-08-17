@@ -2,8 +2,8 @@ name: 6-Hour Blacklist Check
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Runs automatically every 6 hours
-  workflow_dispatch:      # Manual trigger button
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   run-monitor:
@@ -15,7 +15,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+
+      - name: Install Dependencies
+        run: npm install @supabase/supabase-js
 
       - name: Execute Blacklist Monitor
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: node index.js
