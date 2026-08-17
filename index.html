@@ -55,11 +55,12 @@
             <th class="py-3 px-4">Status</th>
             <th class="py-3 px-4">Listings</th>
             <th class="py-3 px-4">Last Checked</th>
+            <th class="py-3 px-4 text-right">Action</th>
           </tr>
         </thead>
         <tbody id="targetsTable" class="divide-y divide-gray-700">
           <tr>
-            <td colspan="5" class="py-6 text-center text-gray-500">Enter your API Key above to load monitored targets.</td>
+            <td colspan="6" class="py-6 text-center text-gray-500">Enter your API Key above to load monitored targets.</td>
           </tr>
         </tbody>
       </table>
@@ -90,7 +91,7 @@
     function startAutoSync() {
       if (autoSyncTimer) clearInterval(autoSyncTimer);
       fetchTargets();
-      autoSyncTimer = setInterval(fetchTargets, 10000); // Checks for updates every 10 seconds
+      autoSyncTimer = setInterval(fetchTargets, 10000);
     }
 
     async function fetchTargets() {
@@ -100,7 +101,7 @@
       const tbody = document.getElementById("targetsTable");
 
       if (isInitialLoad) {
-        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-400">Loading...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-gray-400">Loading...</td></tr>`;
       }
 
       try {
@@ -112,7 +113,7 @@
         isInitialLoad = false;
 
         if (!data.targets || data.targets.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-500">No targets registered yet.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-gray-500">No targets registered yet.</td></tr>`;
           return;
         }
 
@@ -131,12 +132,17 @@
               <td class="py-3 px-4">${badge}</td>
               <td class="py-3 px-4 text-xs font-mono text-red-400">${listings}</td>
               <td class="py-3 px-4 text-xs text-gray-400">${lastChecked}</td>
+              <td class="py-3 px-4 text-right">
+                <button onclick="deleteTarget('${t.type}', '${t.value}')" class="text-red-400 hover:text-red-300 text-xs font-semibold hover:underline">
+                  Delete
+                </button>
+              </td>
             </tr>
           `;
         }).join("");
       } catch (err) {
         if (isInitialLoad) {
-          tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-red-400">${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-red-400">${err.message}</td></tr>`;
         }
       }
     }
@@ -163,12 +169,33 @@
         if (!res.ok) throw new Error(data.error);
 
         document.getElementById("targetValue").value = "";
-        await fetchTargets(); // Instantly update table upon submission
+        await fetchTargets();
       } catch (err) {
         alert("Error adding target: " + err.message);
       } finally {
         submitBtn.disabled = false;
         submitBtn.innerText = "+ Add Target";
+      }
+    }
+
+    async function deleteTarget(type, value) {
+      if (!confirm(`Remove ${value} from monitoring?`)) return;
+
+      const key = localStorage.getItem("rbl_api_key");
+      if (!key) return alert("Please save your API Key first.");
+
+      try {
+        const res = await fetch(API_BASE, {
+          method: "DELETE",
+          headers: { "x-api-key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({ type, value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        await fetchTargets();
+      } catch (err) {
+        alert("Error deleting target: " + err.message);
       }
     }
   </script>
