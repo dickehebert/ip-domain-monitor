@@ -1,0 +1,30 @@
+name: 6-Hour Blacklist Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours (UTC)
+  workflow_dispatch:      # Allows manual testing button
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Execute Blacklist Monitor
+        env:
+          TARGET_IPS: ${{ secrets.TARGET_IPS }}
+          TARGET_DOMAINS: ${{ secrets.TARGET_DOMAINS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node index.js
