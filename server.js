@@ -1,8 +1,10 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
+app.use(cors()); // Allows browser fetch requests from your frontend domain
 app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -25,6 +27,17 @@ async function authenticateKey(req, res, next) {
   next();
 }
 
+// Endpoint: Fetch monitored targets
+app.get('/v1/targets', authenticateKey, async (req, res) => {
+  const { data, error } = await supabase
+    .from('monitored_targets')
+    .select('type, value, status, listings, last_checked_at')
+    .eq('api_key_id', req.keyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ targets: data });
+});
+
 // Endpoint: Users submit IP or Domain for monitoring
 app.post('/v1/targets', authenticateKey, async (req, res) => {
   const { type, value } = req.body;
@@ -39,16 +52,6 @@ app.post('/v1/targets', authenticateKey, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   return res.status(201).json({ message: `${type.toUpperCase()} registered for monitoring successfully.` });
-});
-// Endpoint: Fetch status of all monitored targets for the authenticated user
-app.get('/v1/targets', authenticateKey, async (req, res) => {
-  const { data, error } = await supabase
-    .from('monitored_targets')
-    .select('type, value, status, listings, last_checked_at')
-    .eq('api_key_id', req.keyId);
-
-  if (error) return res.status(500).json({ error: error.message });
-  return res.json({ targets: data });
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('API Server running'));
