@@ -15,9 +15,10 @@
         <h1 class="text-2xl font-bold text-white">RBL Monitor Dashboard</h1>
         <p class="text-sm text-gray-400">Track IP & Domain blacklists in real-time</p>
       </div>
-      <button onclick="fetchTargets()" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm transition">
-        🔄 Refresh
-      </button>
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+        <span class="text-xs text-gray-400 font-medium">Live Auto-Sync</span>
+      </div>
     </div>
 
     <!-- API Key Input -->
@@ -38,7 +39,7 @@
           <option value="domain">Domain</option>
         </select>
         <input type="text" id="targetValue" placeholder="e.g. 192.0.2.1 or example.com" required class="bg-gray-900 border border-gray-700 rounded px-3 py-2 flex-grow text-sm text-white focus:outline-none focus:border-blue-500">
-        <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-5 py-2 rounded text-sm transition">
+        <button type="submit" id="submitBtn" class="bg-green-600 hover:bg-green-500 text-white px-5 py-2 rounded text-sm transition">
           + Add Target
         </button>
       </form>
@@ -58,7 +59,7 @@
         </thead>
         <tbody id="targetsTable" class="divide-y divide-gray-700">
           <tr>
-            <td colspan="5" class="py-6 text-center text-gray-500">Enter your API Key above and refresh to view targets.</td>
+            <td colspan="5" class="py-6 text-center text-gray-500">Enter your API Key above to load monitored targets.</td>
           </tr>
         </tbody>
       </table>
@@ -67,13 +68,14 @@
 
   <script>
     const API_BASE = "https://ip-domain-monitor.onrender.com/v1/targets";
+    let autoSyncTimer = null;
+    let isInitialLoad = true;
 
-    // Load stored key on boot
     document.addEventListener("DOMContentLoaded", () => {
       const savedKey = localStorage.getItem("rbl_api_key");
       if (savedKey) {
         document.getElementById("apiKey").value = savedKey;
-        fetchTargets();
+        startAutoSync();
       }
     });
 
@@ -81,7 +83,14 @@
       const key = document.getElementById("apiKey").value.trim();
       if (!key) return alert("Please enter an API Key.");
       localStorage.setItem("rbl_api_key", key);
+      isInitialLoad = true;
+      startAutoSync();
+    }
+
+    function startAutoSync() {
+      if (autoSyncTimer) clearInterval(autoSyncTimer);
       fetchTargets();
+      autoSyncTimer = setInterval(fetchTargets, 10000); // Checks for updates every 10 seconds
     }
 
     async function fetchTargets() {
@@ -89,13 +98,18 @@
       if (!key) return;
 
       const tbody = document.getElementById("targetsTable");
-      tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-400">Loading...</td></tr>`;
+
+      if (isInitialLoad) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-400">Loading...</td></tr>`;
+      }
 
       try {
         const res = await fetch(API_BASE, { headers: { "x-api-key": key } });
         const data = await res.json();
 
         if (!res.ok) throw new Error(data.error || "Failed to fetch");
+
+        isInitialLoad = false;
 
         if (!data.targets || data.targets.length === 0) {
           tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-500">No targets registered yet.</td></tr>`;
@@ -121,7 +135,9 @@
           `;
         }).join("");
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-red-400">${err.message}</td></tr>`;
+        if (isInitialLoad) {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-red-400">${err.message}</td></tr>`;
+        }
       }
     }
 
@@ -132,6 +148,10 @@
 
       const type = document.getElementById("targetType").value;
       const value = document.getElementById("targetValue").value.trim();
+      const submitBtn = document.getElementById("submitBtn");
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Adding...";
 
       try {
         const res = await fetch(API_BASE, {
@@ -143,9 +163,12 @@
         if (!res.ok) throw new Error(data.error);
 
         document.getElementById("targetValue").value = "";
-        fetchTargets();
+        await fetchTargets(); // Instantly update table upon submission
       } catch (err) {
         alert("Error adding target: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "+ Add Target";
       }
     }
   </script>
