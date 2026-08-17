@@ -40,5 +40,15 @@ app.post('/v1/targets', authenticateKey, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   return res.status(201).json({ message: `${type.toUpperCase()} registered for monitoring successfully.` });
 });
+// Endpoint: Fetch status of all monitored targets for the authenticated user
+app.get('/v1/targets', authenticateKey, async (req, res) => {
+  const { data, error } = await supabase
+    .from('monitored_targets')
+    .select('type, value, status, listings, last_checked_at')
+    .eq('api_key_id', req.keyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ targets: data });
+});
 
 app.listen(process.env.PORT || 3000, () => console.log('API Server running'));
