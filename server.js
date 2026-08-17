@@ -35,7 +35,7 @@ app.post('/v1/targets', authenticateKey, async (req, res) => {
 
   const { data, error } = await supabase
     .from('monitored_targets')
-    .upsert({ api_key_id: req.keyId, type, value, status: 'pending' });
+    .upsert({ api_key_id: req.keyId, type, value, status: 'pending' }, { onConflict: 'api_key_id,type,value' });
 
   if (error) return res.status(500).json({ error: error.message });
   return res.status(201).json({ message: `${type.toUpperCase()} registered for monitoring successfully.` });
