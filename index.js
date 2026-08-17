@@ -1,8 +1,16 @@
 const dns = require('dns').promises;
+const { createClient } = require('@supabase/supabase-js');
 
-// Hardcode your IPs and Domains here (separated by commas in the strings)
-const IPS = ['192.0.2.1', '198.51.100.25']; // Replace with your SMTP server IPs
-const DOMAINS = ['yourdomain.com'];         // Replace with your sending domains
+// Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Missing SUPABASE_URL or SUPABASE_KEY environment variables.");
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const IP_BLACK_LISTS = [
   'zen.spamhaus.org',
@@ -17,23 +25,14 @@ const DOMAIN_BLACK_LISTS = [
   'dbl.spamhaus.org'
 ];
 
-async function checkIp(ip) {
-  const reversed = ip.split('.').reverse().join('.');
+async function checkTarget(type, value) {
+  const lists = type === 'ip' ? IP_BLACK_LISTS : DOMAIN_BLACK_LISTS;
+  const queryHost = type === 'ip' ? value.split('.').reverse().join('.') : value;
   const hits = [];
-  for (const list of IP_BLACK_LISTS) {
-    try {
-      await dns.resolve4(`${reversed}.${list}`);
-      hits.push(list);
-    } catch (e) {}
-  }
-  return hits;
-}
 
-async function checkDomain(domain) {
-  const hits = [];
-  for (const list of DOMAIN_BLACK_LISTS) {
+  for (const list of lists) {
     try {
-      await dns.resolve4(`${domain}.${list}`);
+      await dns.resolve4(`${queryHost}.${list}`);
       hits.push(list);
     } catch (e) {}
   }
@@ -42,30 +41,50 @@ async function checkDomain(domain) {
 
 async function runAudit() {
   console.log(`==================================================`);
-  console.log(`[${new Date().toISOString()}] STARTING BLACKLIST AUDIT`);
+  console.log(`[${new Date().toISOString()}] STARTING SUPABASE BLACKLIST AUDIT`);
   console.log(`==================================================\n`);
 
-  // Audit IPs
-  for (const ip of IPS) {
-    console.log(`Checking IP: ${ip}...`);
-    const listings = await checkIp(ip);
-    if (listings.length > 0) {
-      console.log(`  ❌ BLACKLISTED! Listed on: ${listings.join(', ')}`);
+  // Fetch all targets registered across all API keys
+  const { data: targets, error } = await supabase
+    .from('monitored_targets')
+    .select('*');
+
+  if (error) {
+    console.error('Database fetch failed:', error.message);
+    return;
+  }
+
+  if (!targets || targets.length === 0) {
+    console.log('No targets currently registered in database to audit.');
+    return;
+  }
+
+  console.log(`Found ${targets.length} target(s) registered in database.\n`);
+
+  for (const target of targets) {
+    console.log(`Auditing [${target.type.toUpperCase()}] ${target.value}...`);
+    
+    const hits = await checkTarget(target.type, target.value);
+    const newStatus = hits.length > 0 ? 'blacklisted' : 'clean';
+
+    if (hits.length > 0) {
+      console.log(`  ❌ BLACKLISTED! Listed on: ${hits.join(', ')}`);
     } else {
       console.log(`  ✅ CLEAN`);
     }
-  }
 
-  console.log(`\n--------------------------------------------------\n`);
+    // Update target status, blacklists hit, and timestamp back into Supabase
+    const { error: updateError } = await supabase
+      .from('monitored_targets')
+      .update({
+        status: newStatus,
+        listings: hits,
+        last_checked_at: new Date().toISOString()
+      })
+      .eq('id', target.id);
 
-  // Audit Domains
-  for (const domain of DOMAINS) {
-    console.log(`Checking Domain: ${domain}...`);
-    const listings = await checkDomain(domain);
-    if (listings.length > 0) {
-      console.log(`  ❌ BLACKLISTED! Listed on: ${listings.join(', ')}`);
-    } else {
-      console.log(`  ✅ CLEAN`);
+    if (updateError) {
+      console.error(`  ⚠️ Failed to update database record: ${updateError.message}`);
     }
   }
 
