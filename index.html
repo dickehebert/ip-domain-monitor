@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IP & Domain Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6 font-sans">
+
+  <div class="max-w-5xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center border-b border-gray-800 pb-4">
+      <div>
+        <h1 class="text-2xl font-bold text-white">RBL Monitor Dashboard</h1>
+        <p class="text-sm text-gray-400">Track IP & Domain blacklists in real-time</p>
+      </div>
+      <button onclick="fetchTargets()" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm transition">
+        🔄 Refresh
+      </button>
+    </div>
+
+    <!-- API Key Input -->
+    <div class="bg-gray-800 p-4 rounded-lg flex flex-col sm:flex-row gap-3 items-center">
+      <label class="text-sm font-semibold text-gray-300 w-full sm:w-auto">API Key:</label>
+      <input type="password" id="apiKey" placeholder="bm_live_..." class="bg-gray-900 border border-gray-700 rounded px-3 py-2 flex-grow text-sm text-white focus:outline-none focus:border-blue-500 w-full">
+      <button onclick="saveApiKey()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm w-full sm:w-auto transition">
+        Save Key
+      </button>
+    </div>
+
+    <!-- Add Target Form -->
+    <div class="bg-gray-800 p-4 rounded-lg">
+      <h2 class="text-sm font-semibold text-gray-300 mb-3">Add Target to Monitor</h2>
+      <form onsubmit="addTarget(event)" class="flex flex-col sm:flex-row gap-3">
+        <select id="targetType" class="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none">
+          <option value="ip">IP Address</option>
+          <option value="domain">Domain</option>
+        </select>
+        <input type="text" id="targetValue" placeholder="e.g. 192.0.2.1 or example.com" required class="bg-gray-900 border border-gray-700 rounded px-3 py-2 flex-grow text-sm text-white focus:outline-none focus:border-blue-500">
+        <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-5 py-2 rounded text-sm transition">
+          + Add Target
+        </button>
+      </form>
+    </div>
+
+    <!-- Targets Table -->
+    <div class="bg-gray-800 rounded-lg overflow-hidden">
+      <table class="w-full text-left text-sm text-gray-300">
+        <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
+          <tr>
+            <th class="py-3 px-4">Type</th>
+            <th class="py-3 px-4">Target</th>
+            <th class="py-3 px-4">Status</th>
+            <th class="py-3 px-4">Listings</th>
+            <th class="py-3 px-4">Last Checked</th>
+          </tr>
+        </thead>
+        <tbody id="targetsTable" class="divide-y divide-gray-700">
+          <tr>
+            <td colspan="5" class="py-6 text-center text-gray-500">Enter your API Key above and refresh to view targets.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "https://ip-domain-monitor.onrender.com/v1/targets";
+
+    // Load stored key on boot
+    document.addEventListener("DOMContentLoaded", () => {
+      const savedKey = localStorage.getItem("rbl_api_key");
+      if (savedKey) {
+        document.getElementById("apiKey").value = savedKey;
+        fetchTargets();
+      }
+    });
+
+    function saveApiKey() {
+      const key = document.getElementById("apiKey").value.trim();
+      if (!key) return alert("Please enter an API Key.");
+      localStorage.setItem("rbl_api_key", key);
+      fetchTargets();
+    }
+
+    async function fetchTargets() {
+      const key = localStorage.getItem("rbl_api_key");
+      if (!key) return;
+
+      const tbody = document.getElementById("targetsTable");
+      tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-400">Loading...</td></tr>`;
+
+      try {
+        const res = await fetch(API_BASE, { headers: { "x-api-key": key } });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || "Failed to fetch");
+
+        if (!data.targets || data.targets.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-500">No targets registered yet.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = data.targets.map(t => {
+          let badge = `<span class="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-xs">PENDING</span>`;
+          if (t.status === "clean") badge = `<span class="px-2 py-1 bg-green-900 text-green-300 rounded text-xs">CLEAN</span>`;
+          if (t.status === "blacklisted") badge = `<span class="px-2 py-1 bg-red-900 text-red-300 rounded text-xs font-bold">BLACKLISTED</span>`;
+
+          const listings = (t.listings && t.listings.length) ? t.listings.join(", ") : "—";
+          const lastChecked = t.last_checked_at ? new Date(t.last_checked_at).toLocaleString() : "Never";
+
+          return `
+            <tr class="hover:bg-gray-750">
+              <td class="py-3 px-4 font-mono text-xs uppercase">${t.type}</td>
+              <td class="py-3 px-4 font-semibold text-white">${t.value}</td>
+              <td class="py-3 px-4">${badge}</td>
+              <td class="py-3 px-4 text-xs font-mono text-red-400">${listings}</td>
+              <td class="py-3 px-4 text-xs text-gray-400">${lastChecked}</td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-red-400">${err.message}</td></tr>`;
+      }
+    }
+
+    async function addTarget(e) {
+      e.preventDefault();
+      const key = localStorage.getItem("rbl_api_key");
+      if (!key) return alert("Please save your API Key first.");
+
+      const type = document.getElementById("targetType").value;
+      const value = document.getElementById("targetValue").value.trim();
+
+      try {
+        const res = await fetch(API_BASE, {
+          method: "POST",
+          headers: { "x-api-key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({ type, value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        document.getElementById("targetValue").value = "";
+        fetchTargets();
+      } catch (err) {
+        alert("Error adding target: " + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
