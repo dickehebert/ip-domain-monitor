@@ -1,10 +1,8 @@
-require('dotenv').config();
 const dns = require('dns').promises;
-const cron = require('node-cron');
-const axios = require('axios');
 
-const IPS = (process.env.TARGET_IPS || '').split(',').map(i => i.trim()).filter(Boolean);
-const DOMAINS = (process.env.TARGET_DOMAINS || '').split(',').map(d => d.trim()).filter(Boolean);
+// Hardcode your IPs and Domains here (separated by commas in the strings)
+const IPS = ['192.0.2.1', '198.51.100.25']; // Replace with your SMTP server IPs
+const DOMAINS = ['yourdomain.com'];         // Replace with your sending domains
 
 const IP_BLACK_LISTS = [
   'zen.spamhaus.org',
@@ -18,29 +16,6 @@ const DOMAIN_BLACK_LISTS = [
   'multi.surbl.org',
   'dbl.spamhaus.org'
 ];
-
-const previousState = { ips: {}, domains: {} };
-
-async function sendAlert(message) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  if (!token || !chatId) {
-    console.log('[ALERT LOG]:\n' + message);
-    return;
-  }
-
-  try {
-    await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-      chat_id: chatId,
-      text: message,
-      parse_mode: 'Markdown'
-    });
-    console.log('Telegram alert dispatched.');
-  } catch (err) {
-    console.error('Telegram alert failed:', err.message);
-  }
-}
 
 async function checkIp(ip) {
   const reversed = ip.split('.').reverse().join('.');
@@ -66,40 +41,37 @@ async function checkDomain(domain) {
 }
 
 async function runAudit() {
-  console.log(`[${new Date().toISOString()}] Starting Blacklist Audit...`);
-  const alerts = [];
+  console.log(`==================================================`);
+  console.log(`[${new Date().toISOString()}] STARTING BLACKLIST AUDIT`);
+  console.log(`==================================================\n`);
 
+  // Audit IPs
   for (const ip of IPS) {
-    const current = await checkIp(ip);
-    const prev = previousState.ips[ip] || [];
-    const newlyListed = current.filter(x => !prev.includes(x));
-
-    if (newlyListed.length > 0) {
-      alerts.push(`🚨 *IP BLACKLIST ALERT*\n*IP:* \`${ip}\`\n*Listed on:* ${newlyListed.join(', ')}`);
+    console.log(`Checking IP: ${ip}...`);
+    const listings = await checkIp(ip);
+    if (listings.length > 0) {
+      console.log(`  ❌ BLACKLISTED! Listed on: ${listings.join(', ')}`);
+    } else {
+      console.log(`  ✅ CLEAN`);
     }
-    previousState.ips[ip] = current;
   }
 
+  console.log(`\n--------------------------------------------------\n`);
+
+  // Audit Domains
   for (const domain of DOMAINS) {
-    const current = await checkDomain(domain);
-    const prev = previousState.domains[domain] || [];
-    const newlyListed = current.filter(x => !prev.includes(x));
-
-    if (newlyListed.length > 0) {
-      alerts.push(`🚨 *DOMAIN BLACKLIST ALERT*\n*Domain:* \`${domain}\`\n*Listed on:* ${newlyListed.join(', ')}`);
+    console.log(`Checking Domain: ${domain}...`);
+    const listings = await checkDomain(domain);
+    if (listings.length > 0) {
+      console.log(`  ❌ BLACKLISTED! Listed on: ${listings.join(', ')}`);
+    } else {
+      console.log(`  ✅ CLEAN`);
     }
-    previousState.domains[domain] = current;
   }
 
-  if (alerts.length > 0) {
-    await sendAlert(alerts.join('\n\n'));
-  } else {
-    console.log('Audit complete. All targets clean.');
-  }
+  console.log(`\n==================================================`);
+  console.log(`AUDIT COMPLETE`);
+  console.log(`==================================================`);
 }
 
-// Runs every 6 hours
-cron.schedule('0 */6 * * *', runAudit);
-
-// Immediate execution on startup
 runAudit();
